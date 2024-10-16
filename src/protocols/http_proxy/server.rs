@@ -1,9 +1,8 @@
 use anyhow::Context;
-use tracing::warn;
 use std::future::Future;
 
 use bytes::Bytes;
-use log::{debug, error};
+use log::{warn, error};
 use std::net::{Ipv4Addr, SocketAddr};
 use std::pin::Pin;
 use std::sync::Arc;
