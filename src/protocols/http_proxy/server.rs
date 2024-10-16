@@ -1,4 +1,5 @@
 use anyhow::Context;
+use tracing::warn;
 use std::future::Future;
 
 use bytes::Bytes;
@@ -55,7 +56,7 @@ fn handle_request(
         return future::ready(err_response());
     }
 
-    debug!("HTTP Proxy CONNECT request to {}", req.uri());
+    warn!("HTTP Proxy CONNECT request to {}", req.uri());
     let forward_to = (
         Host::parse(req.uri().host().unwrap_or_default()).unwrap_or(Host::Ipv4(Ipv4Addr::new(0, 0, 0, 0))),
         req.uri().port_u16().unwrap_or(443),
@@ -132,6 +133,7 @@ pub async fn run_server(
             };
 
             if let Some(forward_to) = forward_to {
+                warn!("{:?} is connecting to {:?}", stream.peer_addr(), forward_to);
                 return Some((Ok((stream, forward_to)), (listener, tasks, proxy_cfg)));
             }
 
