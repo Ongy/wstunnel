@@ -2,8 +2,8 @@ use anyhow::Context;
 use std::future::Future;
 
 use bytes::Bytes;
-use log::{error, warn};
-use std::net::{Ipv4Addr, SocketAddr};
+use log::{debug, error};
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -55,7 +55,7 @@ fn handle_request(
         return future::ready(err_response());
     }
 
-    warn!("HTTP Proxy CONNECT request to {}", req.uri());
+    debug!("HTTP Proxy CONNECT request to {}", req.uri());
     let forward_to = Host::parse(req.uri().host().unwrap_or_default())
         .ok()
         .map(|h| (h, req.uri().port_u16().unwrap_or(443)));
@@ -135,7 +135,6 @@ pub async fn run_server(
             };
 
             if let Some(forward_to) = forward_to {
-                warn!("{:?} is connecting to {:?}", stream.peer_addr(), forward_to);
                 return Some((Ok((stream, forward_to)), (listener, tasks, proxy_cfg)));
             }
 
