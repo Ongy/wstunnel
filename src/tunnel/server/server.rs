@@ -1,10 +1,11 @@
 use anyhow::anyhow;
 use futures_util::FutureExt;
 use http_body_util::Either;
-use opentelemetry::metrics::Counter;
+use opentelemetry::metrics::{Counter, Histogram};
 use opentelemetry::{global, KeyValue};
 use std::fmt;
 use std::fmt::{Debug, Formatter};
+use tokio::time::Instant;
 
 use crate::protocols;
 use crate::tunnel::{try_to_sock_addr, LocalProtocol, RemoteAddr};
@@ -69,6 +70,7 @@ pub struct WsServerConfig {
 
 pub struct WsServerMetrics {
     pub connections: Counter<u64>,
+    pub connect_latencies: Histogram<u64>,
 }
 
 #[derive(Clone)]
@@ -86,6 +88,10 @@ impl WsServer {
                 connections: meter
                     .u64_counter("connections_created")
                     .with_description("Counts the connections created. Attributes allow to split by remote host")
+                    .build(),
+                connect_latencies: meter
+                    .u64_histogram("connect_latency")
+                    .with_description("Provides a latency histogram per target")
                     .build(),
             }),
         }
@@ -193,10 +199,19 @@ impl WsServer {
                     Duration::from_secs(10),
                     &self.config.dns_resolver,
                 );
+                let pre = Instant::now();
                 let (rx, mut tx) = match &self.config.http_proxy {
                     None => connector.connect(&None).await?,
                     Some(proxy_url) => connector.connect_with_http_proxy(proxy_url, &None).await?,
                 };
+                let elapsed = pre.elapsed();
+                self.metrics.connect_latencies.record(
+                    elapsed.as_millis() as u64,
+                    &[
+                        KeyValue::new("remote_host", format!("{}", remote.host)),
+                        KeyValue::new("remote_port", i64::from(remote.port)),
+                    ],
+                );
 
                 if proxy_protocol {
                     let header = ppp::v2::Builder::with_addresses(
