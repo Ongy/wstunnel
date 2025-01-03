@@ -10,6 +10,7 @@ use http_body_util::{BodyStream, Either, StreamBody};
 use hyper::body::{Frame, Incoming};
 use hyper::header::CONTENT_TYPE;
 use hyper::{Request, Response, StatusCode};
+use opentelemetry::KeyValue;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -43,16 +44,28 @@ pub(super) async fn http_server_upgrade(
         .body(Either::Right(body))
         .expect("bug: failed to build response");
 
+    let attributes = [
+        KeyValue::new("remote_host", format!("{:}", remote_addr.host)),
+        KeyValue::new("remote_port", i64::from(remote_addr.port)),
+    ];
     tokio::spawn(
         async move {
+            // We need a copy of the attributes that can be owned by the closure...
+            let to_remote_attributes = attributes.clone();
+            let to_metric = server.metrics.bytes_to_remote.clone();
+            let from_metric = server.metrics.bytes_from_remote.clone();
             let (close_tx, close_rx) = oneshot::channel::<()>();
-            tokio::task::spawn(
-                transport::io::propagate_remote_to_local(local_tx, Http2TunnelRead::new(ws_rx), close_rx)
-                    .instrument(Span::current()),
-            );
+            tokio::task::spawn(async move {
+                let bytes_written =
+                    transport::io::propagate_remote_to_local(local_tx, Http2TunnelRead::new(ws_rx), close_rx)
+                        .instrument(Span::current())
+                        .await;
+                to_metric.record(bytes_written as u64, &to_remote_attributes);
+            });
 
-            let _ =
+            let bytes_written =
                 transport::io::propagate_local_to_remote(local_rx, Http2TunnelWrite::new(ws_tx), close_tx, None).await;
+            from_metric.record(bytes_written as u64, &attributes);
         }
         .instrument(Span::current()),
     );

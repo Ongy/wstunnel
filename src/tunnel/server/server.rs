@@ -71,6 +71,8 @@ pub struct WsServerConfig {
 pub struct WsServerMetrics {
     pub connections: Counter<u64>,
     pub connect_latencies: Histogram<u64>,
+    pub bytes_to_remote: Histogram<u64>,
+    pub bytes_from_remote: Histogram<u64>,
 }
 
 #[derive(Clone)]
@@ -92,6 +94,14 @@ impl WsServer {
                 connect_latencies: meter
                     .u64_histogram("connect_latency")
                     .with_description("Provides a latency histogram per target")
+                    .build(),
+                bytes_to_remote: meter
+                    .u64_histogram("bytes_to_remote")
+                    .with_description("Provides information about how many bytes were proxied from the websocket to the target")
+                    .build(),
+                bytes_from_remote: meter
+                    .u64_histogram("bytes_from_remote")
+                    .with_description("Provides information about how many bytes were proxied from the target to the websocket")
                     .build(),
             }),
         }

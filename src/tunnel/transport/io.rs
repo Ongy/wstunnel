@@ -29,7 +29,7 @@ pub trait TunnelRead: Send + 'static {
     fn copy(
         &mut self,
         writer: impl AsyncWrite + Unpin + Send,
-    ) -> impl Future<Output = Result<(), std::io::Error>> + Send;
+    ) -> impl Future<Output = Result<usize, std::io::Error>> + Send;
 }
 
 pub enum TunnelReader {
@@ -38,7 +38,7 @@ pub enum TunnelReader {
 }
 
 impl TunnelRead for TunnelReader {
-    async fn copy(&mut self, writer: impl AsyncWrite + Unpin + Send) -> Result<(), std::io::Error> {
+    async fn copy(&mut self, writer: impl AsyncWrite + Unpin + Send) -> Result<usize, std::io::Error> {
         match self {
             Self::Websocket(s) => s.copy(writer).await,
             Self::Http2(s) => s.copy(writer).await,
@@ -100,7 +100,7 @@ pub async fn propagate_local_to_remote(
     mut ws_tx: impl TunnelWrite,
     mut close_tx: oneshot::Sender<()>,
     ping_frequency: Option<Duration>,
-) -> anyhow::Result<()> {
+) -> usize {
     let _guard = scopeguard::guard((), |_| {
         info!("Closing local => remote tunnel");
     });
@@ -116,6 +116,7 @@ pub async fn propagate_local_to_remote(
     let notify = ws_tx.pending_operations_notify();
     let mut has_pending_operations = notify.notified();
     let mut has_pending_operations_pin = unsafe { Pin::new_unchecked(&mut has_pending_operations) };
+    let mut bytes_sent = 0;
 
     pin_mut!(timeout);
     pin_mut!(should_close);
@@ -147,14 +148,19 @@ pub async fn propagate_local_to_remote(
 
             _ = timeout.tick(), if ping_frequency.is_some() => {
                 debug!("sending ping to keep connection alive");
-                ws_tx.ping().await?;
+                if let Err(err) = ws_tx.ping().await {
+                    warn!("error while sending ping {err}");
+                    break;
+                }
                 continue;
             }
         };
 
-        let _read_len = match read_len {
+        match read_len {
             Ok(0) => break,
-            Ok(read_len) => read_len,
+            Ok(read_len) => {
+                bytes_sent = bytes_sent + read_len as usize;
+            }
             Err(err) => {
                 warn!("error while reading incoming bytes from local tx tunnel: {}", err);
                 break;
@@ -171,19 +177,22 @@ pub async fn propagate_local_to_remote(
     // Send normal close
     let _ = ws_tx.close().await;
 
-    Ok(())
+    bytes_sent
 }
 
+/// Read incoming bytes on the websocket and write them to the local connection.
+/// I.e. this function moves data out of the websocket and into the network.
 pub async fn propagate_remote_to_local(
     local_tx: impl AsyncWrite + Send,
     mut ws_rx: impl TunnelRead,
     mut close_rx: oneshot::Receiver<()>,
-) -> anyhow::Result<()> {
+) -> usize {
     let _guard = scopeguard::guard((), |_| {
         info!("Closing local <= remote tunnel");
     });
 
     pin_mut!(local_tx);
+    let mut bytes_copied = 0;
     loop {
         let msg = select! {
             biased;
@@ -191,15 +200,20 @@ pub async fn propagate_remote_to_local(
             _ = &mut close_rx => break,
         };
 
-        if let Err(err) = msg {
-            match err.kind() {
-                ErrorKind::NotConnected => debug!("Connection closed frame received"),
-                ErrorKind::BrokenPipe => debug!("Remote side closed connection"),
-                _ => error!("error while reading from tunnel rx {err}"),
+        match msg {
+            Err(err) => {
+                match err.kind() {
+                    ErrorKind::NotConnected => debug!("Connection closed frame received"),
+                    ErrorKind::BrokenPipe => debug!("Remote side closed connection"),
+                    _ => error!("error while reading from tunnel rx {err}"),
+                }
+                break;
             }
-            break;
+            Ok(v) => {
+                bytes_copied = bytes_copied + v;
+            }
         }
     }
 
-    Ok(())
+    bytes_copied
 }

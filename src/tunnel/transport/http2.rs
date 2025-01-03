@@ -35,13 +35,13 @@ impl Http2TunnelRead {
 }
 
 impl TunnelRead for Http2TunnelRead {
-    async fn copy(&mut self, mut writer: impl AsyncWrite + Unpin + Send) -> Result<(), io::Error> {
+    async fn copy(&mut self, mut writer: impl AsyncWrite + Unpin + Send) -> Result<usize, io::Error> {
         loop {
             match self.inner.next().await {
                 Some(Ok(frame)) => match frame.into_data() {
                     Ok(data) => {
                         return match writer.write_all(data.as_ref()).await {
-                            Ok(_) => Ok(()),
+                            Ok(_) => Ok(data.len()),
                             Err(err) => Err(io::Error::new(ErrorKind::ConnectionAborted, err)),
                         }
                     }

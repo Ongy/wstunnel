@@ -182,7 +182,7 @@ fn frame_reader(_: Frame<'_>) -> futures_util::future::Ready<anyhow::Result<()>>
 }
 
 impl TunnelRead for WebsocketTunnelRead {
-    async fn copy(&mut self, mut writer: impl AsyncWrite + Unpin + Send) -> Result<(), io::Error> {
+    async fn copy(&mut self, mut writer: impl AsyncWrite + Unpin + Send) -> Result<usize, io::Error> {
         loop {
             let msg = match self.inner.read_frame(&mut frame_reader).await {
                 Ok(msg) => msg,
@@ -193,7 +193,7 @@ impl TunnelRead for WebsocketTunnelRead {
             match msg.opcode {
                 OpCode::Continuation | OpCode::Text | OpCode::Binary => {
                     return match writer.write_all(msg.payload.as_ref()).await {
-                        Ok(_) => Ok(()),
+                        Ok(_) => Ok(msg.payload.len()),
                         Err(err) => Err(io::Error::new(ErrorKind::ConnectionAborted, err)),
                     }
                 }
