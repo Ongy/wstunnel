@@ -1,15 +1,15 @@
 use clap::Parser;
+use opentelemetry::global;
 use std::io;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use opentelemetry::global;
 use tracing::warn;
 use tracing_subscriber::filter::Directive;
 use tracing_subscriber::EnvFilter;
 use wstunnel::config::{Client, Server};
+use wstunnel::metrics;
 use wstunnel::LocalProtocol;
 use wstunnel::{run_client, run_server};
-use wstunnel::metrics;
 
 /// Use Websocket or HTTP2 protocol to tunnel {TCP,UDP} traffic
 /// wsTunnelClient <---> wsTunnelServer <---> RemoteHost

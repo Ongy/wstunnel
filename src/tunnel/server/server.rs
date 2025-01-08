@@ -97,11 +97,15 @@ impl WsServer {
                     .build(),
                 bytes_to_remote: meter
                     .u64_histogram("bytes_to_remote")
-                    .with_description("Provides information about how many bytes were proxied from the websocket to the target")
+                    .with_description(
+                        "Provides information about how many bytes were proxied from the websocket to the target",
+                    )
                     .build(),
                 bytes_from_remote: meter
                     .u64_histogram("bytes_from_remote")
-                    .with_description("Provides information about how many bytes were proxied from the target to the websocket")
+                    .with_description(
+                        "Provides information about how many bytes were proxied from the target to the websocket",
+                    )
                     .build(),
             }),
         }
