@@ -99,7 +99,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(addr) = args.metrics_provider_address {
         match metrics::setup_metrics_provider(&addr).await {
             Ok(provider) => {
-                let _ = global::set_meter_provider(provider);
+                global::set_meter_provider(provider);
             }
             Err(err) => {
                 panic!("Failed to setup metrics server: {err:?}")

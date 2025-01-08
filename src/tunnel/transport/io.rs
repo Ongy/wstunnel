@@ -159,7 +159,7 @@ pub async fn propagate_local_to_remote(
         match read_len {
             Ok(0) => break,
             Ok(read_len) => {
-                bytes_sent = bytes_sent + read_len as usize;
+                bytes_sent += read_len;
             }
             Err(err) => {
                 warn!("error while reading incoming bytes from local tx tunnel: {}", err);
@@ -210,7 +210,7 @@ pub async fn propagate_remote_to_local(
                 break;
             }
             Ok(v) => {
-                bytes_copied = bytes_copied + v;
+                bytes_copied += v;
             }
         }
     }

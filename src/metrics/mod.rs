@@ -80,5 +80,5 @@ pub async fn setup_metrics_provider(addr: &SocketAddr) -> anyhow::Result<SdkMete
         }
     });
 
-    return Ok(provider);
+    Ok(provider)
 }
