@@ -1,5 +1,6 @@
 use anyhow::Context;
 use std::future::Future;
+use tracing::warn;
 
 use bytes::Bytes;
 use log::{debug, error};
@@ -22,6 +23,9 @@ use tokio::select;
 use tokio::task::JoinSet;
 use tracing::log::info;
 use url::Host;
+
+use hickory_resolver::config::*;
+use hickory_resolver::TokioAsyncResolver;
 
 #[allow(clippy::type_complexity)]
 pub struct HttpProxyListener {
@@ -104,6 +108,7 @@ pub async fn run_server(
 
     let proxy_cfg = Arc::new((auth_header, http1));
     let listener = stream::unfold((listener, tasks, proxy_cfg), |(listener, mut tasks, proxy_cfg)| async {
+        let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
         loop {
             let (mut stream, forward_to) = select! {
                 biased;
@@ -135,6 +140,18 @@ pub async fn run_server(
             };
 
             if let Some(forward_to) = forward_to {
+                if forward_to.0.to_string() == "storage.googleapis.com" {
+                    if let Ok(peer_addr) = stream.peer_addr() {
+                        match resolver.reverse_lookup(peer_addr.ip()).await {
+                            Ok(peer_names) => {
+                                for peer_name in peer_names {
+                                    warn!("http CONNECT to {:?} for {:}", forward_to, peer_name)
+                                }
+                            }
+                            _ => warn!("http CONNECT to {:?} for {:?}", forward_to, peer_addr),
+                        }
+                    }
+                }
                 return Some((Ok((stream, forward_to)), (listener, tasks, proxy_cfg)));
             }
 
